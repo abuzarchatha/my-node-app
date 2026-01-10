@@ -1,0 +1,109 @@
+name: CI / CD – Build → Scan → Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  APP_RUNNER_SERVICE_ARN: ${{ secrets.APP_RUNNER_SERVICE_ARN }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write          # OIDC token for AWS
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---------- Lint & Test ----------
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install deps & Lint
+        run: |
+          npm ci
+          npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      # ---------- AWS Auth ----------
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ---------- ECR login ----------
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ---------- Build image ----------
+      - name: Set short image tag (git SHA)
+        run: echo "IMAGE_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          build-args: |
+            BUILD_SHA=${{ env.IMAGE_TAG }}
+          cache-from: type=registry,ref=${{ env.ECR_REPOSITORY }}:cache
+          cache-to: type=registry,ref=${{ env.ECR_REPOSITORY }}:cache,mode=max
+
+      # ---------- Security scan ----------
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.23.0
+        with:
+          image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          format: table
+          exit-code: '0'   # 0 = do not fail the pipeline (change to 1 for strict)
+          ignore-unfixed: true
+
+      # ---------- Deploy to App Runner ----------
+      - name: Deploy / Update App Runner service
+        env:
+          IMAGE_URI: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+        run: |
+          if [[ -z "${APP_RUNNER_SERVICE_ARN}" ]]; then
+            echo "First deployment – creating App Runner service"
+            SERVICE_ARN=$(aws apprunner create-service \
+              --service-name my-node-app \
+              --source-configuration ImageRepository={ImageIdentifier=$IMAGE_URI,ImageRepositoryType=ECR} \
+              --instance-configuration Cpu=1 vCPU,Memory=2 GB \
+              --auto-deployments-enabled false \
+              --health-check-configuration Protocol=HTTP,Path=/health,Interval=30,Timeout=5,HealthyThreshold=1,UnhealthyThreshold=5 \
+              --runtime-environment-variables VERSION=$IMAGE_TAG \
+              --output text --query 'Service.ServiceArn')
+            echo "✅ Service created: $SERVICE_ARN"
+            echo "APP_RUNNER_SERVICE_ARN=$SERVICE_ARN" >> $GITHUB_ENV
+          else
+            echo "Updating existing App Runner service $APP_RUNNER_SERVICE_ARN"
+            aws apprunner update-service \
+              --service-arn $APP_RUNNER_SERVICE_ARN \
+              --source-configuration ImageRepository={ImageIdentifier=$IMAGE_URI,ImageRepositoryType=ECR} \
+              --runtime-environment-variables VERSION=$IMAGE_TAG
+            aws apprunner start-deployment --service-arn $APP_RUNNER_SERVICE_ARN
+          fi
+
+      # ---------- Show final URL ----------
+      - name: Show App Runner URL
+        if: env.APP_RUNNER_SERVICE_ARN != ''
+        run: |
+          URL=$(aws apprunner describe-service \
+                --service-arn $APP_RUNNER_SERVICE_ARN \
+                --query 'Service.Url' --output text)
+          echo "🌐 Service URL: $URL"
+          echo "VERSION (Git SHA): ${{ env.IMAGE_TAG }}"
+          echo "service_url=$URL" >> $GITHUB_OUTPUT
