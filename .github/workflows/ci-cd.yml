@@ -7,7 +7,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}          # can be full URI or just repo name
   APP_RUNNER_SERVICE_ARN: ${{ secrets.APP_RUNNER_SERVICE_ARN }}
 
 jobs:
@@ -36,7 +36,7 @@ jobs:
       - name: Run tests
         run: npm test
 
-      # ---------- AWS Auth ----------
+      # ---------- AWS Auth (OIDC) ----------
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -47,44 +47,65 @@ jobs:
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # ---------- Build image ----------
+      # ---------- Prepare tags / repo URIs ----------
       - name: Set short image tag (git SHA)
-        run: echo "IMAGE_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
+        run: echo "IMAGE_TAG=${GITHUB_SHA:0:8}" >> $GITHUB_ENV
 
+      - name: Compute ECR image URI
+        run: |
+          # If ECR_REPOSITORY is already a full registry URI (contains amazonaws.com), use it.
+          if [[ "${ECR_REPOSITORY}" == *".amazonaws.com"* ]]; then
+            ECR_FULL="${ECR_REPOSITORY}"
+          else
+            # Expect secrets.AWS_ACCOUNT_ID set to your account ID (if not, set ECR_REPOSITORY as full URI)
+            if [[ -z "${{ secrets.AWS_ACCOUNT_ID }}" ]]; then
+              echo "ERROR: secrets.AWS_ACCOUNT_ID is not set and ECR_REPOSITORY is not a full URI"
+              exit 1
+            fi
+            ECR_FULL="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${ECR_REPOSITORY}"
+          fi
+          echo "ECR_FULL=${ECR_FULL}" >> $GITHUB_ENV
+          echo "IMAGE_URI=${ECR_FULL}:${IMAGE_TAG}" >> $GITHUB_ENV
+          echo "Computed IMAGE_URI=${ECR_FULL}:${IMAGE_TAG}"
+
+      # ---------- Build image (with cache) ----------
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          tags: ${{ env.ECR_FULL }}:${{ env.IMAGE_TAG }}
           build-args: |
             BUILD_SHA=${{ env.IMAGE_TAG }}
-          cache-from: type=registry,ref=${{ env.ECR_REPOSITORY }}:cache
-          cache-to: type=registry,ref=${{ env.ECR_REPOSITORY }}:cache,mode=max
+          cache-from: type=registry,ref=${{ env.ECR_FULL }}:cache
+          cache-to: type=registry,ref=${{ env.ECR_FULL }}:cache,mode=max
 
       # ---------- Security scan ----------
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@0.23.0
         with:
-          image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          image-ref: ${{ env.IMAGE_URI }}
           format: table
-          exit-code: '0'   # 0 = do not fail the pipeline (change to 1 for strict)
+          exit-code: '0'   # change to '1' to fail pipeline on vulnerabilities
           ignore-unfixed: true
 
       # ---------- Deploy to App Runner ----------
       - name: Deploy / Update App Runner service
         env:
-          IMAGE_URI: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          IMAGE_URI: ${{ env.IMAGE_URI }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          AWS_REGION: ${{ env.AWS_REGION }}
         run: |
+          set -euo pipefail
           if [[ -z "${APP_RUNNER_SERVICE_ARN}" ]]; then
             echo "First deployment – creating App Runner service"
             SERVICE_ARN=$(aws apprunner create-service \
               --service-name my-node-app \
-              --source-configuration ImageRepository={ImageIdentifier=$IMAGE_URI,ImageRepositoryType=ECR} \
-              --instance-configuration Cpu=1 vCPU,Memory=2 GB \
+              --source-configuration "ImageRepository={ImageIdentifier='${IMAGE_URI}',ImageRepositoryType='ECR',ImageConfiguration={Port='8080',RuntimeEnvironmentVariables=[{Name='VERSION',Value='${IMAGE_TAG}'}]}}" \
+              --instance-configuration "Cpu=1024,Memory=2048" \
               --auto-deployments-enabled false \
-              --health-check-configuration Protocol=HTTP,Path=/health,Interval=30,Timeout=5,HealthyThreshold=1,UnhealthyThreshold=5 \
-              --runtime-environment-variables VERSION=$IMAGE_TAG \
+              --health-check-configuration "Protocol=HTTP,Path=/health,Interval=30,Timeout=5,HealthyThreshold=1,UnhealthyThreshold=5" \
+              --tags Key=deployedBy,Value=github-actions Key=commit,Value=${IMAGE_TAG} \
               --output text --query 'Service.ServiceArn')
             echo "✅ Service created: $SERVICE_ARN"
             echo "APP_RUNNER_SERVICE_ARN=$SERVICE_ARN" >> $GITHUB_ENV
@@ -92,18 +113,30 @@ jobs:
             echo "Updating existing App Runner service $APP_RUNNER_SERVICE_ARN"
             aws apprunner update-service \
               --service-arn $APP_RUNNER_SERVICE_ARN \
-              --source-configuration ImageRepository={ImageIdentifier=$IMAGE_URI,ImageRepositoryType=ECR} \
-              --runtime-environment-variables VERSION=$IMAGE_TAG
+              --source-configuration "ImageRepository={ImageIdentifier='${IMAGE_URI}',ImageRepositoryType='ECR',ImageConfiguration={Port='8080',RuntimeEnvironmentVariables=[{Name='VERSION',Value='${IMAGE_TAG}'}]}}"
+            # start deployment (ensures App Runner picks up the new image)
             aws apprunner start-deployment --service-arn $APP_RUNNER_SERVICE_ARN
           fi
 
       # ---------- Show final URL ----------
       - name: Show App Runner URL
-        if: env.APP_RUNNER_SERVICE_ARN != ''
         run: |
-          URL=$(aws apprunner describe-service \
-                --service-arn $APP_RUNNER_SERVICE_ARN \
-                --query 'Service.Url' --output text)
+          SVC_ARN=${APP_RUNNER_SERVICE_ARN:-${APP_RUNNER_SERVICE_ARN}}
+          # if create-service just ran it set $GITHUB_ENV, but GitHub sets the variable for next steps
+          if [[ -z "${APP_RUNNER_SERVICE_ARN}" ]]; then
+            SVC_ARN="${{ env.APP_RUNNER_SERVICE_ARN }}"
+          fi
+          # prefer to read from environment populated by create step (GITHUB_ENV)
+          if [[ -n "${APP_RUNNER_SERVICE_ARN}" ]]; then
+            ARN="${APP_RUNNER_SERVICE_ARN}"
+          else
+            ARN="${{ env.APP_RUNNER_SERVICE_ARN }}"
+          fi
+          # fallback: search by name
+          if [[ -z "$ARN" || "$ARN" == "None" ]]; then
+            ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='my-node-app'].ServiceArn | [0]" --output text)
+          fi
+          URL=$(aws apprunner describe-service --service-arn "$ARN" --query 'Service.Url' --output text)
           echo "🌐 Service URL: $URL"
           echo "VERSION (Git SHA): ${{ env.IMAGE_TAG }}"
           echo "service_url=$URL" >> $GITHUB_OUTPUT
