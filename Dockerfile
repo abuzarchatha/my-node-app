@@ -23,8 +23,9 @@ RUN chown -R node:node /app
 USER node
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
-  CMD wget -qO- http://localhost:8080/health || exit 1
+# NOTE: removed HEALTHCHECK that used wget (wget is not installed in the image).
+# Platforms (App Runner / ECS / etc.) provide their own health checks. If you want
+# an in-image healthcheck, install a tiny tool or implement a node-based check.
 
 ARG BUILD_SHA=unknown
 LABEL com.mycompany.build.sha=$BUILD_SHA
