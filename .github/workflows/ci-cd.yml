@@ -50,8 +50,8 @@ jobs:
 
 
       # # ---------- ECR login ----------
-      # - name: Log in to Amazon ECR
-      #   uses: aws-actions/amazon-ecr-login@v2
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       # # ---------- Prepare tags / repo URIs ----------
       # - name: Set short image tag (git SHA)
