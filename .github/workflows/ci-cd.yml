@@ -53,26 +53,26 @@ jobs:
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # # ---------- Prepare tags / repo URIs ----------
-      # - name: Set short image tag (git SHA)
-      #   run: echo "IMAGE_TAG=${GITHUB_SHA:0:8}" >> $GITHUB_ENV
+      # ---------- Prepare tags / repo URIs ----------
+      - name: Set short image tag (git SHA)
+        run: echo "IMAGE_TAG=${GITHUB_SHA:0:8}" >> $GITHUB_ENV
 
-      # - name: Compute ECR image URI
-      #   run: |
-      #     # If ECR_REPOSITORY is already a full registry URI (contains amazonaws.com), use it.
-      #     if [[ "${ECR_REPOSITORY}" == *".amazonaws.com"* ]]; then
-      #       ECR_FULL="${ECR_REPOSITORY}"
-      #     else
-      #       # Expect secrets.AWS_ACCOUNT_ID set to your account ID (if not, set ECR_REPOSITORY as full URI)
-      #       if [[ -z "${{ secrets.AWS_ACCOUNT_ID }}" ]]; then
-      #         echo "ERROR: secrets.AWS_ACCOUNT_ID is not set and ECR_REPOSITORY is not a full URI"
-      #         exit 1
-      #       fi
-      #       ECR_FULL="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${ECR_REPOSITORY}"
-      #     fi
-      #     echo "ECR_FULL=${ECR_FULL}" >> $GITHUB_ENV
-      #     echo "IMAGE_URI=${ECR_FULL}:${IMAGE_TAG}" >> $GITHUB_ENV
-      #     echo "Computed IMAGE_URI=${ECR_FULL}:${IMAGE_TAG}"
+      - name: Compute ECR image URI
+        run: |
+          # If ECR_REPOSITORY is already a full registry URI (contains amazonaws.com), use it.
+          if [[ "${ECR_REPOSITORY}" == *".amazonaws.com"* ]]; then
+            ECR_FULL="${ECR_REPOSITORY}"
+          else
+            # Expect secrets.AWS_ACCOUNT_ID set to your account ID (if not, set ECR_REPOSITORY as full URI)
+            if [[ -z "${{ secrets.AWS_ACCOUNT_ID }}" ]]; then
+              echo "ERROR: secrets.AWS_ACCOUNT_ID is not set and ECR_REPOSITORY is not a full URI"
+              exit 1
+            fi
+            ECR_FULL="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${ECR_REPOSITORY}"
+          fi
+          echo "ECR_FULL=${ECR_FULL}" >> $GITHUB_ENV
+          echo "IMAGE_URI=${ECR_FULL}:${IMAGE_TAG}" >> $GITHUB_ENV
+          echo "Computed IMAGE_URI=${ECR_FULL}:${IMAGE_TAG}"
 
       # # ---------- Build image (with cache) ----------
       # - name: Build and push Docker image
