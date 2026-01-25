@@ -77,14 +77,14 @@ jobs:
               BUILD_SHA=${{ env.IMAGE_TAG }}
 
 
-      # # ---------- Security scan ----------
-      # - name: Scan image with Trivy
-      #   uses: aquasecurity/trivy-action@0.23.0
-      #   with:
-      #     image-ref: ${{ env.IMAGE_URI }}
-      #     format: table
-      #     exit-code: '0'   # change to '1' to fail pipeline on vulnerabilities
-      #     ignore-unfixed: true
+      # ---------- Security scan ----------
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.23.0
+        with:
+          image-ref: ${{ env.IMAGE_URI }}
+          format: table
+          exit-code: '0'   # change to '1' to fail pipeline on vulnerabilities
+          ignore-unfixed: true
 
       # # ---------- Deploy to App Runner ----------
       # - name: Deploy / Update App Runner service
