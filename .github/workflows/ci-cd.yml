@@ -57,7 +57,7 @@ jobs:
       - name: Set image URI (simple)
         run: |
          echo "IMAGE_URI=${{ secrets.ECR_REPOSITORY }}:${IMAGE_TAG}" >> $GITHUB_ENV 
-         
+      
        - name: Compute ECR image URI
          run: |
           # If ECR_REPOSITORY is already a full registry URI (contains amazonaws.com), use it.
