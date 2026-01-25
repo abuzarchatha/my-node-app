@@ -100,7 +100,6 @@ jobs:
               --service-name my-node-app \
               --source-configuration "ImageRepository={ImageIdentifier='${IMAGE_URI}',ImageRepositoryType='ECR',ImageConfiguration={Port='8080',RuntimeEnvironmentVariables=[{Name='VERSION',Value='${IMAGE_TAG}'}]}}" \
               --instance-configuration "Cpu=1024,Memory=2048" \
-              --auto-deployments-enabled false \
               --health-check-configuration "Protocol=HTTP,Path=/health,Interval=30,Timeout=5,HealthyThreshold=1,UnhealthyThreshold=5" \
               --tags Key=deployedBy,Value=github-actions Key=commit,Value=${IMAGE_TAG} \
               --output text --query 'Service.ServiceArn')
