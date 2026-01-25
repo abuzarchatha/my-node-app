@@ -110,7 +110,7 @@ jobs:
           echo "APP_RUNNER_SERVICE_ARN=$SERVICE_ARN" >> $GITHUB_ENV
 
        else
-         echo "Updating existing App Runner service $APP_RUNNER_SERVICE_ARN"
+          echo "Updating existing App Runner service $APP_RUNNER_SERVICE_ARN"
 
          aws apprunner update-service \
           --service-arn $APP_RUNNER_SERVICE_ARN \
