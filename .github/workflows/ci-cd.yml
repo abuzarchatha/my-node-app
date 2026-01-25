@@ -86,34 +86,34 @@ jobs:
           exit-code: '0'   # change to '1' to fail pipeline on vulnerabilities
           ignore-unfixed: true
 
-      # # ---------- Deploy to App Runner ----------
-      # - name: Deploy / Update App Runner service
-      #   env:
-      #     IMAGE_URI: ${{ env.IMAGE_URI }}
-      #     IMAGE_TAG: ${{ env.IMAGE_TAG }}
-      #     AWS_REGION: ${{ env.AWS_REGION }}
-      #   run: |
-      #     set -euo pipefail
-      #     if [[ -z "${APP_RUNNER_SERVICE_ARN}" ]]; then
-      #       echo "First deployment – creating App Runner service"
-      #       SERVICE_ARN=$(aws apprunner create-service \
-      #         --service-name my-node-app \
-      #         --source-configuration "ImageRepository={ImageIdentifier='${IMAGE_URI}',ImageRepositoryType='ECR',ImageConfiguration={Port='8080',RuntimeEnvironmentVariables=[{Name='VERSION',Value='${IMAGE_TAG}'}]}}" \
-      #         --instance-configuration "Cpu=1024,Memory=2048" \
-      #         --auto-deployments-enabled false \
-      #         --health-check-configuration "Protocol=HTTP,Path=/health,Interval=30,Timeout=5,HealthyThreshold=1,UnhealthyThreshold=5" \
-      #         --tags Key=deployedBy,Value=github-actions Key=commit,Value=${IMAGE_TAG} \
-      #         --output text --query 'Service.ServiceArn')
-      #       echo "✅ Service created: $SERVICE_ARN"
-      #       echo "APP_RUNNER_SERVICE_ARN=$SERVICE_ARN" >> $GITHUB_ENV
-      #     else
-      #       echo "Updating existing App Runner service $APP_RUNNER_SERVICE_ARN"
-      #       aws apprunner update-service \
-      #         --service-arn $APP_RUNNER_SERVICE_ARN \
-      #         --source-configuration "ImageRepository={ImageIdentifier='${IMAGE_URI}',ImageRepositoryType='ECR',ImageConfiguration={Port='8080',RuntimeEnvironmentVariables=[{Name='VERSION',Value='${IMAGE_TAG}'}]}}"
-      #       # start deployment (ensures App Runner picks up the new image)
-      #       aws apprunner start-deployment --service-arn $APP_RUNNER_SERVICE_ARN
-      #     fi
+      # ---------- Deploy to App Runner ----------
+      - name: Deploy / Update App Runner service
+        env:
+          IMAGE_URI: ${{ env.IMAGE_URI }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${APP_RUNNER_SERVICE_ARN}" ]]; then
+            echo "First deployment – creating App Runner service"
+            SERVICE_ARN=$(aws apprunner create-service \
+              --service-name my-node-app \
+              --source-configuration "ImageRepository={ImageIdentifier='${IMAGE_URI}',ImageRepositoryType='ECR',ImageConfiguration={Port='8080',RuntimeEnvironmentVariables=[{Name='VERSION',Value='${IMAGE_TAG}'}]}}" \
+              --instance-configuration "Cpu=1024,Memory=2048" \
+              --auto-deployments-enabled false \
+              --health-check-configuration "Protocol=HTTP,Path=/health,Interval=30,Timeout=5,HealthyThreshold=1,UnhealthyThreshold=5" \
+              --tags Key=deployedBy,Value=github-actions Key=commit,Value=${IMAGE_TAG} \
+              --output text --query 'Service.ServiceArn')
+            echo "✅ Service created: $SERVICE_ARN"
+            echo "APP_RUNNER_SERVICE_ARN=$SERVICE_ARN" >> $GITHUB_ENV
+          else
+            echo "Updating existing App Runner service $APP_RUNNER_SERVICE_ARN"
+            aws apprunner update-service \
+              --service-arn $APP_RUNNER_SERVICE_ARN \
+              --source-configuration "ImageRepository={ImageIdentifier='${IMAGE_URI}',ImageRepositoryType='ECR',ImageConfiguration={Port='8080',RuntimeEnvironmentVariables=[{Name='VERSION',Value='${IMAGE_TAG}'}]}}"
+            # start deployment (ensures App Runner picks up the new image)
+            aws apprunner start-deployment --service-arn $APP_RUNNER_SERVICE_ARN
+          fi
 
       # # ---------- Show final URL ----------
       # - name: Show App Runner URL
