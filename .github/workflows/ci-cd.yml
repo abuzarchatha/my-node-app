@@ -65,17 +65,17 @@ jobs:
 
 
 
-      # # ---------- Build image (with cache) ----------
-      # - name: Build and push Docker image
-      #   uses: docker/build-push-action@v5
-      #   with:
-      #     context: .
-      #     push: true
-      #     tags: ${{ env.ECR_FULL }}:${{ env.IMAGE_TAG }}
-      #     build-args: |
-      #       BUILD_SHA=${{ env.IMAGE_TAG }}
-      #     cache-from: type=registry,ref=${{ env.ECR_FULL }}:cache
-      #     cache-to: type=registry,ref=${{ env.ECR_FULL }}:cache,mode=max
+      # ---------- Build image (with cache) ----------
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.ECR_FULL }}:${{ env.IMAGE_TAG }}
+          build-args: |
+            BUILD_SHA=${{ env.IMAGE_TAG }}
+          cache-from: type=registry,ref=${{ env.ECR_FULL }}:cache
+          cache-to: type=registry,ref=${{ env.ECR_FULL }}:cache,mode=max
 
       # # ---------- Security scan ----------
       # - name: Scan image with Trivy
